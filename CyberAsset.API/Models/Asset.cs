@@ -44,4 +44,10 @@ public partial class Asset
     public virtual ICollection<PerformanceMetric> PerformanceMetrics { get; set; } = new List<PerformanceMetric>();
 
     public virtual ICollection<WebAccessLog> WebAccessLogs { get; set; } = new List<WebAccessLog>();
+    // ... Eski alanlar (Id, Name, vs.) burada kalsın ...
+
+    // YENİ EKLENECEK DETAY ALANLARI
+    public string? CpuInfo { get; set; }    // Örn: Intel Core i7-12700H
+    public string? RamCapacity { get; set; } // Örn: 16 GB
+    public string? DiskCapacity { get; set; } // Örn: 512 GB SSD
 }
