@@ -1,44 +1,59 @@
 import 'package:flutter/material.dart';
+import 'models/asset_model.dart';
 
 class AddAssetPage extends StatefulWidget {
-  const AddAssetPage({super.key});
+  // Eğer bu sayfaya bir Cihaz (Asset) gönderilirse "Düzenleme Modu" açılır.
+  // Gönderilmezse "Ekleme Modu" çalışır.
+  final Asset? assetToEdit;
+
+  const AddAssetPage({super.key, this.assetToEdit});
 
   @override
   State<AddAssetPage> createState() => _AddAssetPageState();
 }
 
 class _AddAssetPageState extends State<AddAssetPage> {
-  // Formdaki verileri tutacak değişkenler
   final _adController = TextEditingController();
   final _seriNoController = TextEditingController();
-  String _secilenTur = 'Laptop'; // Varsayılan değer
+  String _secilenTur = 'Laptop';
+  bool _isEditing = false; // Düzenleme modunda mıyız?
+
+  @override
+  void initState() {
+    super.initState();
+    // Eğer düzenlenecek veri geldiyse, kutuları doldur
+    if (widget.assetToEdit != null) {
+      _isEditing = true;
+      _adController.text = widget.assetToEdit!.isim;
+      _seriNoController.text = widget.assetToEdit!.seriNo;
+      
+      // Gelen tür listede var mı kontrol et (Yoksa varsayılan kalsın)
+      List<String> turler = ['Laptop', 'Monitör', 'Telefon', 'Tablet', 'Yazıcı', 'Ağ Cihazı', 'Diğer'];
+      if (turler.contains(widget.assetToEdit!.tur)) {
+        _secilenTur = widget.assetToEdit!.tur;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Yeni Varlık Ekle"),
+        title: Text(_isEditing ? "Varlığı Düzenle" : "Yeni Varlık Ekle"),
         backgroundColor: Colors.transparent,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Cihaz Bilgileri", style: TextStyle(color: Colors.cyanAccent, fontSize: 18)),
-            const SizedBox(height: 20),
-
-            // 1. Cihaz Adı
-            _buildTextField(label: "Cihaz Adı / Model", icon: Icons.computer, controller: _adController),
+            _buildTextField(label: "Cihaz Adı", icon: Icons.computer, controller: _adController),
             const SizedBox(height: 15),
-
-            // 2. Seri Numarası
-            _buildTextField(label: "Seri Numarası", icon: Icons.qr_code, controller: _seriNoController),
+            _buildTextField(label: "Seri No / MAC", icon: Icons.qr_code, controller: _seriNoController),
             const SizedBox(height: 15),
-
-            // 3. Cihaz Türü (Açılır Menü)
+            
+            // Tür Seçimi
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: Colors.white10,
                 borderRadius: BorderRadius.circular(12),
@@ -49,19 +64,10 @@ class _AddAssetPageState extends State<AddAssetPage> {
                   value: _secilenTur,
                   dropdownColor: const Color(0xFF2C2C2C),
                   isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down, color: Colors.cyanAccent),
-                  items: ['Laptop', 'Monitör', 'Telefon', 'Tablet', 'Yazıcı', 'Ağ Cihazı']
-                      .map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value, style: const TextStyle(color: Colors.white)),
-                    );
-                  }).toList(),
-                  onChanged: (newValue) {
-                    setState(() {
-                      _secilenTur = newValue!;
-                    });
-                  },
+                  items: ['Laptop', 'Monitör', 'Telefon', 'Tablet', 'Yazıcı', 'Ağ Cihazı', 'Diğer']
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.white))))
+                      .toList(),
+                  onChanged: (v) => setState(() => _secilenTur = v!),
                 ),
               ),
             ),
@@ -72,27 +78,23 @@ class _AddAssetPageState extends State<AddAssetPage> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton.icon(
-                // add_asset.dart içinde KAYDET butonu kısmı:
-onPressed: () {
-  if (_adController.text.isEmpty || _seriNoController.text.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Lütfen tüm alanları doldurun!")),
-    );
-    return;
-  }
+                onPressed: () {
+                  if (_adController.text.isEmpty) return;
 
-  // 1. Yeni veriyi bir paket (Map) yap
-  final yeniCihaz = {
-    "isim": _adController.text,
-    "tur": _secilenTur,
-    "durum": true, // Varsayılan olarak sağlam (Aktif) olsun
-  };
+                  // Verileri paketle
+                  final assetData = {
+                    "id": widget.assetToEdit?.id, // ID varsa koy (Update için lazım)
+                    "isim": _adController.text,
+                    "tur": _secilenTur,
+                    "seriNo": _seriNoController.text,
+                    "durum": true,
+                  };
 
-  // 2. Bu paketi önceki sayfaya fırlat ve penceryi kapat
-  Navigator.pop(context, yeniCihaz);
-},
-                icon: const Icon(Icons.save),
-                label: const Text("KAYDET"),
+                  // Paketi geri gönder
+                  Navigator.pop(context, assetData);
+                },
+                icon: Icon(_isEditing ? Icons.update : Icons.save),
+                label: Text(_isEditing ? "GÜNCELLE" : "KAYDET"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.cyanAccent,
                   foregroundColor: Colors.black,
@@ -105,7 +107,6 @@ onPressed: () {
     );
   }
 
-  // Özel Text Kutusu Tasarımı (Kod tekrarını önlemek için)
   Widget _buildTextField({required String label, required IconData icon, required TextEditingController controller}) {
     return TextField(
       controller: controller,
@@ -116,14 +117,6 @@ onPressed: () {
         filled: true,
         fillColor: Colors.white10,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade800),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Colors.cyanAccent),
-        ),
       ),
     );
   }
