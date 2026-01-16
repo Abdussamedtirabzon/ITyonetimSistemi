@@ -1,0 +1,26 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.pub-cache/
+.pub/
+
+# Android
+android/app/libs/
+android/idea/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# Linux
+linux/flutter/ephemeral/
+
+# .NET / C#
+bin/
+obj/
+.vs/
+*.user
+appsettings.Development.json

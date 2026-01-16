@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CyberAsset.API", "CyberAsset.API.csproj", "{595347BF-1A51-36E6-B876-DF43B5196CAF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{595347BF-1A51-36E6-B876-DF43B5196CAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{595347BF-1A51-36E6-B876-DF43B5196CAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{595347BF-1A51-36E6-B876-DF43B5196CAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{595347BF-1A51-36E6-B876-DF43B5196CAF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {194CCF57-3D81-4F36-974C-E93FB70C959D}
+	EndGlobalSection
+EndGlobal

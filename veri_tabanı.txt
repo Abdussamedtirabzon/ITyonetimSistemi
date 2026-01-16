@@ -1,0 +1,281 @@
+-- =============================================
+-- PROJE: CyberAsset Manager (IT Varlık ve Zafiyet Yönetimi)
+-- TARİH: 15.01.2026
+-- =============================================
+
+-- 1. VERİTABANI OLUŞTURMA (Eğer varsa siler, sıfırdan kurar)
+USE master;
+GO
+
+IF EXISTS (SELECT * FROM sys.databases WHERE name = 'CyberAssetDB')
+BEGIN
+    ALTER DATABASE CyberAssetDB SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE CyberAssetDB;
+END
+GO
+
+CREATE DATABASE CyberAssetDB;
+GO
+
+USE CyberAssetDB;
+GO
+
+-- =============================================
+-- BÖLÜM 1: KİMLİK VE YETKİ (Identity Module)
+-- =============================================
+
+-- Departmanlar
+CREATE TABLE Departments (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    Name NVARCHAR(100) NOT NULL,
+    ManagerName NVARCHAR(100),
+    CreatedAt DATETIME DEFAULT GETDATE()
+);
+
+-- Kullanıcılar
+CREATE TABLE Users (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    DepartmentId INT,
+    Username NVARCHAR(50) NOT NULL UNIQUE,
+    FullName NVARCHAR(100) NOT NULL,
+    Email NVARCHAR(100) UNIQUE,
+    PasswordHash NVARCHAR(500) NOT NULL, -- Şifreler Hash'li tutulacak
+    Role NVARCHAR(20) DEFAULT 'User', -- 'Admin', 'User', 'Auditor'
+    IsActive BIT DEFAULT 1,
+    CreatedAt DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (DepartmentId) REFERENCES Departments(Id)
+);
+
+-- Denetim Logları (Trigger burayı dolduracak)
+CREATE TABLE UserAuditLogs (
+    LogId BIGINT PRIMARY KEY IDENTITY(1,1),
+    UserId INT,
+    OldRole NVARCHAR(20),
+    NewRole NVARCHAR(20),
+    OperationType NVARCHAR(10), -- 'UPDATE', 'DELETE'
+    ChangedAt DATETIME DEFAULT GETDATE()
+);
+
+-- =============================================
+-- BÖLÜM 2: VARLIK YÖNETİMİ (Asset Module)
+-- =============================================
+
+-- Varlık Tipleri (Laptop, Server, Firewall vb.)
+CREATE TABLE AssetTypes (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    TypeName NVARCHAR(50) NOT NULL
+);
+
+-- Ana Varlık Tablosu
+CREATE TABLE Assets (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    AssetTypeId INT NOT NULL,
+    AssignedUserId INT, -- Kime zimmetli?
+    Name NVARCHAR(100) NOT NULL, -- Hostname
+    IPAddress NVARCHAR(50),
+    MacAddress NVARCHAR(50),
+    OS_Name NVARCHAR(100), -- Windows 11, Fedora 39
+    OS_Version NVARCHAR(50),
+    Specs_CPU NVARCHAR(100),
+    Specs_RAM_GB INT,
+    PurchaseDate DATE,
+    WarrantyEndDate DATE,
+    Status NVARCHAR(20) DEFAULT 'Active', -- Active, Maintenance, Retired
+    LastSeen DATETIME,
+    FOREIGN KEY (AssetTypeId) REFERENCES AssetTypes(Id),
+    FOREIGN KEY (AssignedUserId) REFERENCES Users(Id) ON DELETE SET NULL
+);
+
+-- Yüklü Yazılımlar
+CREATE TABLE InstalledSoftware (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    AssetId INT NOT NULL,
+    SoftwareName NVARCHAR(200) NOT NULL,
+    Version NVARCHAR(50),
+    Publisher NVARCHAR(100),
+    InstallDate DATETIME,
+    FOREIGN KEY (AssetId) REFERENCES Assets(Id) ON DELETE CASCADE
+);
+
+-- =============================================
+-- BÖLÜM 3: GÜVENLİK VE ZAFİYET (Security Module)
+-- =============================================
+
+-- Zafiyet Tanımları (CVE Listesi)
+CREATE TABLE VulnerabilityDefinitions (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    CVE_Code NVARCHAR(50) UNIQUE NOT NULL, -- Örn: CVE-2024-1234
+    Title NVARCHAR(200),
+    Description NVARCHAR(MAX),
+    SeverityScore DECIMAL(3,1), -- 1.0 - 10.0 arası (CVSS)
+    RiskLevel NVARCHAR(20) -- Low, Medium, High, Critical
+);
+
+-- Tespit Edilen Zafiyetler
+CREATE TABLE DetectedVulnerabilities (
+    Id INT PRIMARY KEY IDENTITY(1,1),
+    AssetId INT NOT NULL,
+    VulnerabilityId INT NOT NULL,
+    DetectedDate DATETIME DEFAULT GETDATE(),
+    Status NVARCHAR(20) DEFAULT 'Open', -- Open, Fixed, Ignored
+    FixedDate DATETIME,
+    FOREIGN KEY (AssetId) REFERENCES Assets(Id) ON DELETE CASCADE,
+    FOREIGN KEY (VulnerabilityId) REFERENCES VulnerabilityDefinitions(Id)
+);
+
+-- =============================================
+-- BÖLÜM 4: İZLEME VE LOGLAMA (Monitoring Module)
+-- =============================================
+
+-- Performans Metrikleri (CPU/RAM)
+CREATE TABLE PerformanceMetrics (
+    Id BIGINT PRIMARY KEY IDENTITY(1,1),
+    AssetId INT NOT NULL,
+    CpuUsagePercent INT CHECK (CpuUsagePercent BETWEEN 0 AND 100),
+    RamUsagePercent INT CHECK (RamUsagePercent BETWEEN 0 AND 100),
+    DiskFreeSpaceGB INT,
+    RecordedAt DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (AssetId) REFERENCES Assets(Id) ON DELETE CASCADE
+);
+
+-- Web Erişim Logları
+CREATE TABLE WebAccessLogs (
+    Id BIGINT PRIMARY KEY IDENTITY(1,1),
+    AssetId INT NOT NULL,
+    Url NVARCHAR(MAX),
+    Domain NVARCHAR(255),
+    IsBlocked BIT DEFAULT 0,
+    AccessTime DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (AssetId) REFERENCES Assets(Id) ON DELETE CASCADE
+);
+
+-- =============================================
+-- BÖLÜM 5: İLETİŞİM (Communication Module)
+-- =============================================
+
+CREATE TABLE Messages (
+    Id BIGINT PRIMARY KEY IDENTITY(1,1),
+    SenderUserId INT NOT NULL,
+    ReceiverUserId INT, -- NULL ise genel duyurudur
+    MessageText NVARCHAR(MAX),
+    AttachmentPath NVARCHAR(500), -- Dosya yolu
+    SentAt DATETIME DEFAULT GETDATE(),
+    IsRead BIT DEFAULT 0,
+    FOREIGN KEY (SenderUserId) REFERENCES Users(Id)
+);
+
+GO
+
+-- =============================================
+-- NESNELER: FUNCTIONS, VIEWS, TRIGGERS, SPs
+-- =============================================
+
+-- 1. FUNCTION: Risk Skoru Hesaplama
+-- Bir bilgisayarın üzerindeki açıklara göre risk puanını hesaplar (0-100 arası)
+CREATE FUNCTION fn_CalculateRiskScore (@AssetId INT)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @Score INT;
+    
+    SELECT @Score = SUM(
+        CASE 
+            WHEN VD.RiskLevel = 'Critical' THEN 20
+            WHEN VD.RiskLevel = 'High' THEN 10
+            WHEN VD.RiskLevel = 'Medium' THEN 5
+            ELSE 1
+        END
+    )
+    FROM DetectedVulnerabilities DV
+    JOIN VulnerabilityDefinitions VD ON DV.VulnerabilityId = VD.Id
+    WHERE DV.AssetId = @AssetId AND DV.Status = 'Open';
+
+    RETURN ISNULL(@Score, 0);
+END;
+GO
+
+-- 2. VIEW: Dashboard Özeti
+-- C# tarafında sürekli JOIN yazmamak için genel bir bakış tablosu
+CREATE VIEW vw_AssetDashboard AS
+SELECT 
+    A.Id AS AssetId,
+    A.Name AS DeviceName,
+    A.IPAddress,
+    A.OS_Name,
+    U.FullName AS OwnerName,
+    D.Name AS Department,
+    dbo.fn_CalculateRiskScore(A.Id) AS RiskScore, -- Fonksiyonu burada kullandık
+    CASE 
+        WHEN dbo.fn_CalculateRiskScore(A.Id) > 50 THEN 'DANGER'
+        WHEN dbo.fn_CalculateRiskScore(A.Id) > 20 THEN 'WARNING'
+        ELSE 'SAFE'
+    END AS SecurityStatus
+FROM Assets A
+LEFT JOIN Users U ON A.AssignedUserId = U.Id
+LEFT JOIN Departments D ON U.DepartmentId = D.Id;
+GO
+
+-- 3. TRIGGER: Kullanıcı Rolü Değişirse Logla
+-- Güvenlik için, kimin yetkisi değiştiyse kaydeder.
+CREATE TRIGGER trg_UserRoleAudit
+ON Users
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- Sadece Role kolonu değiştiyse çalış
+    IF UPDATE(Role)
+    BEGIN
+        INSERT INTO UserAuditLogs (UserId, OldRole, NewRole, OperationType, ChangedAt)
+        SELECT 
+            i.Id, 
+            d.Role, 
+            i.Role, 
+            'UPDATE', 
+            GETDATE()
+        FROM inserted i
+        JOIN deleted d ON i.Id = d.Id;
+    END
+END;
+GO
+
+-- 4. STORED PROCEDURE: Kritik Cihazları Raporla (Try-Catch ile)
+-- Risk skoru X'ten yüksek olan cihazları getirir.
+CREATE PROCEDURE sp_GetHighRiskAssets
+    @MinRiskScore INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    BEGIN TRY
+        -- Transaction güvenliği (Veri tutarlılığı için)
+        BEGIN TRANSACTION;
+
+        SELECT * FROM vw_AssetDashboard
+        WHERE RiskScore >= @MinRiskScore
+        ORDER BY RiskScore DESC;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        -- Hata olursa geri al ve hatayı bildir
+        ROLLBACK TRANSACTION;
+        
+        DECLARE @ErrorMessage NVARCHAR(4000);
+        SET @ErrorMessage = ERROR_MESSAGE();
+        RAISERROR ('Rapor oluşturulurken hata oluştu: %s', 16, 1, @ErrorMessage);
+    END CATCH
+END;
+GO
+
+-- 5. INDEX: Performans İçin
+-- IP Adresi ve Hostname üzerinden aramalar çok hızlı olsun
+CREATE NONCLUSTERED INDEX IX_Assets_IPAddress ON Assets(IPAddress);
+CREATE NONCLUSTERED INDEX IX_Assets_Name ON Assets(Name);
+CREATE NONCLUSTERED INDEX IX_DetectedVulns_Status ON DetectedVulnerabilities(Status);
+
+GO
+
+-- BİTİŞ MESAJI
+PRINT 'CyberAssetDB veritabanı tüm tablo ve nesneleriyle başarıyla oluşturuldu.';

@@ -1,0 +1,6 @@
+@CyberAsset.API_HostAddress = http://localhost:5219
+
+GET {{CyberAsset.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
