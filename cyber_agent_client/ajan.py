@@ -6,8 +6,7 @@ import uuid
 import json
 
 # API Adresi
-API_URL = "http://localhost:5219/api/assets"
-
+API_URL = "http://localhost:5219/api/assets/register"
 # --- BİLGİ TOPLAMA FONKSİYONLARI ---
 
 def get_size(bytes, suffix="B"):

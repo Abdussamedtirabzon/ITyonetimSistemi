@@ -3,12 +3,20 @@ import requests
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableWidget, 
                              QTableWidgetItem, QVBoxLayout, QHBoxLayout, QWidget, 
                              QPushButton, QMessageBox, QHeaderView, QLabel,
-                             QDialog, QFormLayout, QLineEdit, QComboBox)
-from PyQt6.QtGui import QColor, QPalette, QIcon
+                             QDialog, QFormLayout, QLineEdit, QComboBox, QTabWidget)
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtCore import Qt
 
-# API Adresi
-API_URL = "http://localhost:5219/api/assets"
+# Grafik Kütüphaneleri
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+
+# API Adresleri
+# Akıllı kayıt (Mac adresi kontrolü yapan)
+API_REGISTER_URL = "http://localhost:5219/api/assets/register"
+# Standart işlemler (Listeleme, Silme, Tekli Getirme)
+API_BASE_URL = "http://localhost:5219/api/assets"
 
 # --- 0. GİRİŞ EKRANI (LOGIN) ---
 class GirisPenceresi(QDialog):
@@ -54,7 +62,7 @@ class EkleDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Yeni Cihaz Ekle")
-        self.setFixedSize(400, 300)
+        self.setFixedSize(400, 550) 
         
         layout = QVBoxLayout()
         form_layout = QFormLayout()
@@ -62,15 +70,27 @@ class EkleDialog(QDialog):
         self.input_ad = QLineEdit()
         self.combo_tur = QComboBox()
         self.combo_tur.addItems(["Laptop", "Sunucu", "Masaüstü", "Diğer"])
-        self.input_seri = QLineEdit()
-        self.input_seri.setPlaceholderText("Örn: AA:BB:CC:11:22:33")
+        self.input_seri = QLineEdit() # MAC Adresi
+        self.input_seri.setPlaceholderText("Örn: 00:1A:2B:3C:4D:5E")
+        self.input_ip = QLineEdit()
         self.combo_durum = QComboBox()
         self.combo_durum.addItems(["Active", "Passive"])
 
+        # Detay Alanları
+        self.input_os = QLineEdit()
+        self.input_cpu = QLineEdit()
+        self.input_ram = QLineEdit()
+        self.input_disk = QLineEdit()
+
         form_layout.addRow("Cihaz Adı:", self.input_ad)
         form_layout.addRow("Türü:", self.combo_tur)
-        form_layout.addRow("Seri No / MAC:", self.input_seri)
+        form_layout.addRow("MAC Adresi:", self.input_seri)
+        form_layout.addRow("IP Adresi:", self.input_ip)
         form_layout.addRow("Durum:", self.combo_durum)
+        form_layout.addRow("İşletim Sistemi:", self.input_os)
+        form_layout.addRow("İşlemci (CPU):", self.input_cpu)
+        form_layout.addRow("RAM:", self.input_ram)
+        form_layout.addRow("Disk:", self.input_disk)
 
         layout.addLayout(form_layout)
 
@@ -82,60 +102,76 @@ class EkleDialog(QDialog):
 
     def kaydet(self):
         ad = self.input_ad.text()
-        seri = self.input_seri.text()
-        if not ad or not seri:
-            QMessageBox.warning(self, "Eksik", "Lütfen İsim ve Seri No doldurun!")
+        mac = self.input_seri.text()
+        if not ad or not mac:
+            QMessageBox.warning(self, "Eksik", "Cihaz adı ve MAC adresi zorunludur!")
             return
 
         tur_secim = self.combo_tur.currentText()
         asset_type_id = 1 if tur_secim == "Laptop" else 2
 
         yeni_veri = {
-            "name": ad, "macAddress": seri, "assetTypeId": asset_type_id,
-            "status": self.combo_durum.currentText(), "ipAddress": "192.168.1.100"
+            "name": ad, 
+            "macAddress": mac, 
+            "ipAddress": self.input_ip.text(),
+            "assetTypeId": asset_type_id,
+            "status": self.combo_durum.currentText(),
+            "osVersion": self.input_os.text(),
+            "cpuInfo": self.input_cpu.text(),
+            "ramCapacity": self.input_ram.text(),
+            "diskCapacity": self.input_disk.text()
         }
 
         try:
-            requests.post(API_URL, json=yeni_veri)
+            # Akıllı kayıt kapısına gönderiyoruz (Varsa günceller, yoksa ekler)
+            requests.post(API_REGISTER_URL, json=yeni_veri)
             self.accept()
         except Exception as e:
             QMessageBox.critical(self, "Hata", f"Bağlantı: {e}")
 
-# --- 2. DÜZENLEME PENCERESİ (YENİ) ---
+# --- 2. DÜZENLEME PENCERESİ ---
 class DuzenleDialog(QDialog):
     def __init__(self, asset_data, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Düzenle: {asset_data.get('name')}")
-        self.setFixedSize(400, 300)
-        self.asset_data = asset_data # Eski veriyi sakla
+        self.setFixedSize(400, 550)
+        self.asset_data = asset_data
         
         layout = QVBoxLayout()
         form_layout = QFormLayout()
 
-        # Alanlar (Eski verilerle dolu gelecek)
         self.input_ad = QLineEdit(asset_data.get('name'))
         
         self.combo_tur = QComboBox()
         self.combo_tur.addItems(["Laptop", "Sunucu", "Masaüstü", "Diğer"])
-        # Türü seçili getir (Basit mantık)
-        eski_tur_id = asset_data.get('assetTypeId')
-        if eski_tur_id == 1: self.combo_tur.setCurrentText("Laptop")
+        if asset_data.get('assetTypeId') == 1: self.combo_tur.setCurrentText("Laptop")
         else: self.combo_tur.setCurrentText("Diğer")
         
         self.input_seri = QLineEdit(asset_data.get('macAddress'))
+        self.input_ip = QLineEdit(asset_data.get('ipAddress') or "")
 
         self.combo_durum = QComboBox()
         self.combo_durum.addItems(["Active", "Passive"])
         self.combo_durum.setCurrentText(asset_data.get('status'))
 
+        # Detaylar
+        self.input_os = QLineEdit(asset_data.get('osVersion') or "")
+        self.input_cpu = QLineEdit(asset_data.get('cpuInfo') or "")
+        self.input_ram = QLineEdit(asset_data.get('ramCapacity') or "")
+        self.input_disk = QLineEdit(asset_data.get('diskCapacity') or "")
+
         form_layout.addRow("Cihaz Adı:", self.input_ad)
         form_layout.addRow("Türü:", self.combo_tur)
-        form_layout.addRow("Seri No / MAC:", self.input_seri)
+        form_layout.addRow("MAC Adresi:", self.input_seri)
+        form_layout.addRow("IP Adresi:", self.input_ip)
         form_layout.addRow("Durum:", self.combo_durum)
+        form_layout.addRow("İşletim Sistemi:", self.input_os)
+        form_layout.addRow("İşlemci:", self.input_cpu)
+        form_layout.addRow("RAM:", self.input_ram)
+        form_layout.addRow("Disk:", self.input_disk)
 
         layout.addLayout(form_layout)
 
-        # Güncelle Butonu
         self.btn_guncelle = QPushButton("✏️ Güncelle")
         self.btn_guncelle.setStyleSheet("background-color: #e67e22; color: white; padding: 10px; font-weight: bold;")
         self.btn_guncelle.clicked.connect(self.guncelle)
@@ -144,57 +180,73 @@ class DuzenleDialog(QDialog):
         self.setLayout(layout)
 
     def guncelle(self):
-        # Yeni verileri hazırla
         tur_secim = self.combo_tur.currentText()
         asset_type_id = 1 if tur_secim == "Laptop" else 2
         
         guncel_veri = {
-            "id": self.asset_data.get('id'), # ID değişmez
+            "id": self.asset_data.get('id'),
             "name": self.input_ad.text(),
             "macAddress": self.input_seri.text(),
+            "ipAddress": self.input_ip.text(),
             "assetTypeId": asset_type_id,
             "status": self.combo_durum.currentText(),
-            "ipAddress": self.asset_data.get('ipAddress', '192.168.1.100') # Eski IP'yi koru
+            # Yeni alanlar
+            "osVersion": self.input_os.text(),
+            "cpuInfo": self.input_cpu.text(),
+            "ramCapacity": self.input_ram.text(),
+            "diskCapacity": self.input_disk.text()
         }
 
-        # API'ye PUT isteği at
         try:
-            url = f"{API_URL}/{self.asset_data.get('id')}"
-            response = requests.put(url, json=guncel_veri)
-            
-            if response.status_code in [200, 204]:
-                QMessageBox.information(self, "Başarılı", "Güncelleme tamamlandı! ✅")
-                self.accept()
-            else:
-                QMessageBox.warning(self, "Hata", f"Güncellenemedi! Kod: {response.status_code}")
+            url = f"{API_BASE_URL}/{self.asset_data.get('id')}"
+            requests.put(url, json=guncel_veri)
+            self.accept()
         except Exception as e:
-            QMessageBox.critical(self, "Hata", f"Bağlantı hatası: {e}")
+            QMessageBox.critical(self, "Hata", f"Hata: {e}")
 
+# --- 3. GRAFİK ALANI ---
+class GrafikCanvas(FigureCanvas):
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.axes = self.fig.add_subplot(111)
+        # Koyu Tema İçin Arka Plan
+        self.fig.patch.set_facecolor('#353535') 
+        super().__init__(self.fig)
 
-# --- 3. ANA PENCERE ---
+# --- 4. ANA PENCERE ---
 class AnaPencere(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("IT Varlık Yönetimi - Linux Admin Paneli")
-        self.setGeometry(100, 100, 950, 600)
+        self.setWindowTitle("SOC Dashboard - IT Varlık Yönetimi")
+        self.setGeometry(100, 100, 1200, 700)
 
-        ana_widget = QWidget()
-        ana_layout = QVBoxLayout()
+        # Sekme Yapısı
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        # 1. SEKME: Cihaz Listesi
+        self.tab_liste = QWidget()
+        self.setup_liste_tab()
+        self.tabs.addTab(self.tab_liste, "📋 Cihaz Envanteri")
+
+        # 2. SEKME: Analiz Grafikleri
+        self.tab_grafik = QWidget()
+        self.setup_grafik_tab()
+        self.tabs.addTab(self.tab_grafik, "📊 Analiz & Dashboard")
+
+        self.verileri_yukle()
+
+    def setup_liste_tab(self):
+        layout = QVBoxLayout()
         
-        # Üst Panel
+        # Üst Butonlar (Ekle / Düzenle / Yenile / Sil)
         ust_kisim = QHBoxLayout()
-        baslik = QLabel("🚀 Siber Varlık Kontrol Merkezi")
-        baslik.setStyleSheet("font-size: 18px; font-weight: bold; color: #9b59b6;") 
-        ust_kisim.addWidget(baslik)
-        ust_kisim.addStretch()
-
-        # --- BUTONLAR ---
+        
         self.btn_ekle = QPushButton("➕ Yeni Ekle")
         self.btn_ekle.setStyleSheet("background-color: #27ae60; color: white; padding: 8px; border: none;")
         self.btn_ekle.clicked.connect(self.pencere_ac_ekle)
         ust_kisim.addWidget(self.btn_ekle)
 
-        # YENİ EKLENEN BUTON
         self.btn_duzenle = QPushButton("✏️ Düzenle")
         self.btn_duzenle.setStyleSheet("background-color: #f39c12; color: white; padding: 8px; border: none;")
         self.btn_duzenle.clicked.connect(self.pencere_ac_duzenle)
@@ -205,123 +257,156 @@ class AnaPencere(QMainWindow):
         self.btn_yenile.clicked.connect(self.verileri_yukle)
         ust_kisim.addWidget(self.btn_yenile)
 
-        self.btn_sil = QPushButton("🗑️ Sil")
+        # Boşluk Bırak
+        ust_kisim.addStretch()
+
+        self.btn_sil = QPushButton("🗑️ Seçiliyi Sil")
         self.btn_sil.setStyleSheet("background-color: #c0392b; color: white; padding: 8px; border: none;")
         self.btn_sil.clicked.connect(self.varlik_sil)
         ust_kisim.addWidget(self.btn_sil)
 
-        ana_layout.addLayout(ust_kisim)
+        layout.addLayout(ust_kisim)
 
-        # TABLO
+        # Tablo
         self.tablo = QTableWidget()
-        self.tablo.setColumnCount(5)
-        self.tablo.setHorizontalHeaderLabels(["ID", "Cihaz Adı", "Tür", "Seri No", "Durum"])
-        
-        self.tablo.setStyleSheet("""
-            QHeaderView::section { background-color: #353535; color: white; padding: 4px; border: 1px solid #555; }
-            QTableWidget { gridline-color: #555; color: #ddd; }
-            QTableWidget::item:selected { background-color: #d35400; color: white; }
-        """)
-
-        header = self.tablo.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tablo.setColumnCount(9)
+        self.tablo.setHorizontalHeaderLabels(["ID", "Ad", "Tür", "MAC", "IP", "Durum", "OS", "RAM", "Son Görülme"])
+        self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.tablo.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tablo.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        ana_layout.addWidget(self.tablo)
+        self.tablo.setStyleSheet("alternate-background-color: #444; background-color: #333; color: white;")
+        layout.addWidget(self.tablo)
 
-        ana_widget.setLayout(ana_layout)
-        self.setCentralWidget(ana_widget)
-        self.verileri_yukle()
+        self.tab_liste.setLayout(layout)
+
+    def setup_grafik_tab(self):
+        layout = QVBoxLayout()
+        
+        lbl_info = QLabel("İşletim Sistemi Dağılımı")
+        lbl_info.setStyleSheet("font-size: 16px; font-weight: bold; color: white; margin: 10px;")
+        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_info)
+
+        self.grafik = GrafikCanvas(self, width=5, height=4, dpi=100)
+        layout.addWidget(self.grafik)
+
+        self.tab_grafik.setLayout(layout)
 
     def verileri_yukle(self):
         try:
-            response = requests.get(API_URL)
+            response = requests.get(API_BASE_URL)
             if response.status_code == 200:
-                self.tablo_doldur(response.json())
-        except: pass
+                data = response.json()
+                self.tablo_doldur(data)
+                self.grafik_ciz(data)
+        except Exception as e:
+            print(f"Hata: {e}")
 
     def tablo_doldur(self, veriler):
         self.tablo.setRowCount(len(veriler))
         for i, veri in enumerate(veriler):
             self.hucre_yaz(i, 0, veri.get('id'))
             self.hucre_yaz(i, 1, veri.get('name'))
-            self.hucre_yaz(i, 2, "Laptop" if veri.get('assetTypeId')==1 else "Diğer")
+            self.hucre_yaz(i, 2, "PC" if veri.get('assetTypeId')==1 else "Diğer")
             self.hucre_yaz(i, 3, veri.get('macAddress'))
-            durum = veri.get('status')
-            self.hucre_yaz(i, 4, durum)
-            
-            if durum != "Active":
-                for col in range(5):
+            self.hucre_yaz(i, 4, veri.get('ipAddress'))
+            self.hucre_yaz(i, 5, veri.get('status'))
+            self.hucre_yaz(i, 6, veri.get('osVersion'))
+            self.hucre_yaz(i, 7, veri.get('ramCapacity'))
+            self.hucre_yaz(i, 8, veri.get('lastSeen'))
+
+            # Pasif cihazları kırmızı yap
+            if veri.get('status') != "Active":
+                for col in range(9):
                     self.tablo.item(i, col).setBackground(QColor("#7f0000"))
 
     def hucre_yaz(self, row, col, val):
+        if val is None: val = "-"
         item = QTableWidgetItem(str(val))
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.tablo.setItem(row, col, item)
+
+    def grafik_ciz(self, veriler):
+        # İşletim Sistemlerini Say
+        os_counts = {}
+        for veri in veriler:
+            os_name = veri.get('osVersion')
+            if not os_name: 
+                os_name = "Bilinmiyor"
+            else:
+                os_name = os_name.split()[0] # Fedora Linux 39 -> Fedora
+            
+            os_counts[os_name] = os_counts.get(os_name, 0) + 1
+
+        labels = list(os_counts.keys())
+        sizes = list(os_counts.values())
+        
+        # Grafiği Temizle ve Çiz
+        self.grafik.axes.clear()
+        wedges, texts, autotexts = self.grafik.axes.pie(
+            sizes, labels=labels, autopct='%1.1f%%', 
+            startangle=90, colors=['#3498db', '#e74c3c', '#2ecc71', '#f1c40f']
+        )
+        
+        # Yazı Renklerini Ayarla (Koyu Tema İçin)
+        for text in texts: text.set_color('white')
+        for autotext in autotexts: autotext.set_color('white')
+        
+        self.grafik.draw()
 
     def pencere_ac_ekle(self):
         dialog = EkleDialog(self)
         if dialog.exec(): self.verileri_yukle()
 
-    # --- DÜZENLEME MANTIĞI ---
     def pencere_ac_duzenle(self):
         secili = self.tablo.selectionModel().selectedRows()
         if not secili:
-            QMessageBox.warning(self, "Uyarı", "Düzenlemek için bir cihaz seçin!")
+            QMessageBox.warning(self, "Uyarı", "Lütfen düzenlemek için bir cihaz seçin!")
             return
-
-        # 1. Seçili ID'yi al
+        
         rid = secili[0].row()
         secili_id = self.tablo.item(rid, 0).text()
-
-        # 2. Güncel veriyi API'den çek (En doğrusu budur)
+        
         try:
-            resp = requests.get(f"{API_URL}/{secili_id}")
+            resp = requests.get(f"{API_BASE_URL}/{secili_id}")
             if resp.status_code == 200:
-                asset_data = resp.json()
-                # 3. Düzenleme penceresini aç
-                dialog = DuzenleDialog(asset_data, self)
-                if dialog.exec(): 
-                    self.verileri_yukle() # Listeyi yenile
-            else:
-                QMessageBox.warning(self, "Hata", "Veri çekilemedi!")
+                dialog = DuzenleDialog(resp.json(), self)
+                if dialog.exec(): self.verileri_yukle()
         except Exception as e:
-            QMessageBox.critical(self, "Hata", f"Bağlantı: {e}")
+            QMessageBox.critical(self, "Hata", str(e))
 
     def varlik_sil(self):
         secili = self.tablo.selectionModel().selectedRows()
-        if not secili:
-            QMessageBox.warning(self, "Uyarı", "Silinecek satırı seçin!")
+        if not secili: 
+            QMessageBox.warning(self, "Uyarı", "Lütfen silmek için bir cihaz seçin!")
             return
         
         rid = secili[0].row()
         id_val = self.tablo.item(rid, 0).text()
         
-        soru = QMessageBox.question(self, "Onay", "Bu cihaz kalıcı olarak silinsin mi?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if soru == QMessageBox.StandardButton.Yes:
-            requests.delete(f"{API_URL}/{id_val}")
+        cevap = QMessageBox.question(self, "Onay", "Bu cihazı silmek istiyor musunuz?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if cevap == QMessageBox.StandardButton.Yes:
+            requests.delete(f"{API_BASE_URL}/{id_val}")
             self.verileri_yukle()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-
-    # DARK MODE PALETİ
-    dark_palette = QPalette()
-    dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
-    dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
-    dark_palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
-    app.setPalette(dark_palette)
+    
+    # DARK THEME RENKLERİ
+    p = QPalette()
+    p.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+    p.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+    p.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+    p.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+    p.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+    p.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+    p.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+    p.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+    p.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+    p.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+    p.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+    app.setPalette(p)
 
     giris = GirisPenceresi()
     if giris.exec():
