@@ -237,6 +237,10 @@ public partial class CyberAssetDbContext : DbContext
                 .HasForeignKey(d => d.AssetId)
                 .HasConstraintName("FK__WebAccess__Asset__5EBF139D");
         });
+        modelBuilder.Entity<AssetType>().HasData(
+            new AssetType { Id = 1, TypeName = "PC/Laptop" },
+            new AssetType { Id = 2, TypeName = "Diğer" }
+        );
 
         OnModelCreatingPartial(modelBuilder);
     }
