@@ -16,6 +16,7 @@ public partial class Asset
     public string? Ipaddress { get; set; }
 
     public string? MacAddress { get; set; }
+    
 
     public string? OsName { get; set; }
 
